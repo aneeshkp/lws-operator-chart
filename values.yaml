@@ -1,0 +1,24 @@
+# LWS Operator Helm Chart - Default Values
+# Override in environments/default.yaml
+
+namespace: openshift-lws-operator
+
+bundle:
+  version: "1.0"
+
+pullSecret:
+  name: redhat-pull-secret
+  dockerConfigJson: ""  # Set via --set-file or environments/default.yaml
+
+# Auth source (set ONE of these in environments/default.yaml):
+#   useSystemPodmanAuth: true                    # Use ${XDG_RUNTIME_DIR}/containers/auth.json (recommended)
+#   pullSecretFile: /path/to/pull-secret.txt    # OpenShift pull secret
+#   authFile: ~/.config/containers/auth.json    # Custom auth file path
+useSystemPodmanAuth: false
+pullSecretFile: ""
+authFile: ""
+
+# LeaderWorkerSetOperator CR settings
+lwsOperator:
+  enabled: true
+  name: cluster

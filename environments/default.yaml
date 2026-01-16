@@ -1,0 +1,11 @@
+# Default environment configuration
+# Uncomment ONE auth method:
+
+# Option A: Use system podman auth (recommended)
+useSystemPodmanAuth: true
+
+# Option B: Pull secret file path
+# pullSecretFile: ~/pull-secret.txt
+
+# Option C: Custom auth file
+# authFile: ~/.config/containers/auth.json

@@ -1,0 +1,74 @@
+helmDefaults:
+  wait: true
+  timeout: 600
+
+environments:
+  default:
+    values:
+      - environments/default.yaml
+
+---
+
+repositories: []
+
+releases:
+  - name: lws-operator
+    namespace: {{ .Values.namespace | default "openshift-lws-operator" }}
+    chart: ./
+    createNamespace: true
+    values:
+      - values.yaml
+      - environments/default.yaml
+{{- if .Values.useSystemPodmanAuth }}
+      - pullSecret:
+          dockerConfigJson: {{ exec "cat" (list (env "XDG_RUNTIME_DIR" | printf "%s/containers/auth.json")) | quote }}
+{{- else if .Values.pullSecretFile }}
+      - pullSecret:
+          dockerConfigJson: {{ exec "cat" (list .Values.pullSecretFile) | quote }}
+{{- else if .Values.authFile }}
+      - pullSecret:
+          dockerConfigJson: {{ exec "cat" (list .Values.authFile) | quote }}
+{{- end }}
+    hooks:
+      - events: ["presync"]
+        showlogs: true
+        command: kubectl
+        args:
+          - apply
+          - --server-side
+          - -f
+          - manifests-crds/
+      - events: ["presync"]
+        showlogs: true
+        command: kubectl
+        args:
+          - create
+          - namespace
+          - {{ .Values.namespace | default "openshift-lws-operator" }}
+          - --dry-run=client
+          - -o
+          - yaml
+          - "|"
+          - kubectl
+          - apply
+          - -f
+          - "-"
+{{- if .Values.lwsOperator.enabled }}
+      - events: ["postsync"]
+        showlogs: true
+        command: bash
+        args:
+          - -c
+          - |
+            cat <<EOF | kubectl apply -f -
+            apiVersion: operator.openshift.io/v1
+            kind: LeaderWorkerSetOperator
+            metadata:
+              name: {{ .Values.lwsOperator.name | default "cluster" }}
+            spec:
+              managementState: Managed
+            EOF
+{{- end }}
+      - events: ["postsync"]
+        showlogs: true
+        command: ./scripts/post-install-message.sh
