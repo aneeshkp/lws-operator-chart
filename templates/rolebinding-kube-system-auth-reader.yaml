@@ -1,0 +1,16 @@
+# Required for delegating authentication on non-OpenShift clusters
+# Allows operator to read extension-apiserver-authentication configmap in kube-system
+# On OpenShift, this is already configured by the cluster
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openshift-lws-operator-auth-reader
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: openshift-lws-operator
+    namespace: {{ .Values.namespace }}

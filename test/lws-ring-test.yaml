@@ -1,0 +1,220 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lws-test
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: ring-test
+  namespace: lws-test
+spec:
+  replicas: 1  # One group
+  leaderWorkerTemplate:
+    size: 4  # 1 leader + 3 workers = 4 total pods
+    restartPolicy: RecreateGroupOnPodRestart
+    leaderTemplate:
+      metadata:
+        labels:
+          app: ring-test
+          role: leader
+      spec:
+        containers:
+        - name: server
+          image: python:3.11-slim
+          command:
+          - /bin/bash
+          - -c
+          - |
+            apt-get update && apt-get install -y curl dnsutils > /dev/null 2>&1
+
+            echo "=========================================="
+            echo "  LEADER STARTING"
+            echo "=========================================="
+            echo "Hostname: $HOSTNAME"
+            echo "IP: $(hostname -i)"
+            echo "Group Index: $LWS_GROUP_INDEX"
+            echo "Worker Index: $LWS_WORKER_INDEX"
+            echo ""
+
+            # Create simple HTTP server
+            cat > /tmp/server.py << 'PYEOF'
+            from http.server import HTTPServer, BaseHTTPRequestHandler
+            import socket
+            import os
+            import json
+            import threading
+
+            REGISTERED_WORKERS = {}
+            lock = threading.Lock()
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    if self.path == '/health':
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        response = {
+                            'status': 'healthy',
+                            'role': 'leader',
+                            'hostname': socket.gethostname(),
+                            'ip': socket.gethostbyname(socket.gethostname()),
+                            'group_index': os.environ.get('LWS_GROUP_INDEX', 'N/A'),
+                            'worker_index': os.environ.get('LWS_WORKER_INDEX', 'N/A'),
+                            'registered_workers': list(REGISTERED_WORKERS.keys())
+                        }
+                        self.wfile.write(json.dumps(response, indent=2).encode())
+                    elif self.path.startswith('/register'):
+                        worker_ip = self.client_address[0]
+                        with lock:
+                            REGISTERED_WORKERS[worker_ip] = True
+                        self.send_response(200)
+                        self.send_header('Content-type', 'text/plain')
+                        self.end_headers()
+                        self.wfile.write(f"registered {worker_ip}".encode())
+                        print(f"[REGISTERED] Worker from {worker_ip}")
+                    elif self.path == '/workers':
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        self.wfile.write(json.dumps(list(REGISTERED_WORKERS.keys())).encode())
+                    else:
+                        self.send_response(404)
+                        self.end_headers()
+
+                def log_message(self, format, *args):
+                    print(f"[HTTP] {self.client_address[0]} - {args[0]}")
+
+            print("Starting leader HTTP server on port 8080...")
+            HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
+            PYEOF
+
+            python3 /tmp/server.py
+          ports:
+          - containerPort: 8080
+            name: http
+          env:
+          - name: LWS_GROUP_INDEX
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['leaderworkerset.sigs.k8s.io/group-index']
+          - name: LWS_WORKER_INDEX
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['leaderworkerset.sigs.k8s.io/worker-index']
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+    workerTemplate:
+      metadata:
+        labels:
+          app: ring-test
+          role: worker
+      spec:
+        containers:
+        - name: server
+          image: python:3.11-slim
+          command:
+          - /bin/bash
+          - -c
+          - |
+            apt-get update && apt-get install -y curl dnsutils > /dev/null 2>&1
+
+            echo "=========================================="
+            echo "  WORKER STARTING"
+            echo "=========================================="
+            echo "Hostname: $HOSTNAME"
+            echo "IP: $(hostname -i)"
+            echo "Group Index: $LWS_GROUP_INDEX"
+            echo "Worker Index: $LWS_WORKER_INDEX"
+            echo "Leader Address: $LWS_LEADER_ADDRESS"
+            echo ""
+
+            # Wait for leader to be ready
+            echo "Waiting for leader at $LWS_LEADER_ADDRESS:8080..."
+            for i in $(seq 1 30); do
+              if curl -s --connect-timeout 2 http://$LWS_LEADER_ADDRESS:8080/health > /dev/null 2>&1; then
+                echo "Leader is ready!"
+                break
+              fi
+              echo "  Attempt $i: waiting..."
+              sleep 2
+            done
+
+            # Register with leader
+            echo ""
+            echo "Registering with leader..."
+            RESULT=$(curl -s http://$LWS_LEADER_ADDRESS:8080/register)
+            echo "  Result: $RESULT"
+
+            # Get leader info
+            echo ""
+            echo "Leader status:"
+            curl -s http://$LWS_LEADER_ADDRESS:8080/health | python3 -m json.tool
+            echo ""
+
+            # Start worker HTTP server
+            cat > /tmp/server.py << 'PYEOF'
+            from http.server import HTTPServer, BaseHTTPRequestHandler
+            import socket
+            import os
+            import json
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    if self.path == '/health':
+                        self.send_response(200)
+                        self.send_header('Content-type', 'application/json')
+                        self.end_headers()
+                        response = {
+                            'status': 'healthy',
+                            'role': 'worker',
+                            'hostname': socket.gethostname(),
+                            'ip': socket.gethostbyname(socket.gethostname()),
+                            'leader': os.environ.get('LWS_LEADER_ADDRESS', 'unknown'),
+                            'group_index': os.environ.get('LWS_GROUP_INDEX', 'N/A'),
+                            'worker_index': os.environ.get('LWS_WORKER_INDEX', 'N/A')
+                        }
+                        self.wfile.write(json.dumps(response, indent=2).encode())
+                    elif self.path == '/ping':
+                        self.send_response(200)
+                        self.send_header('Content-type', 'text/plain')
+                        self.end_headers()
+                        self.wfile.write(f"pong from {socket.gethostname()}".encode())
+                    else:
+                        self.send_response(404)
+                        self.end_headers()
+
+                def log_message(self, format, *args):
+                    print(f"[HTTP] {self.client_address[0]} - {args[0]}")
+
+            print("Starting worker HTTP server on port 8080...")
+            HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
+            PYEOF
+
+            python3 /tmp/server.py
+          ports:
+          - containerPort: 8080
+            name: http
+          env:
+          - name: LWS_LEADER_ADDRESS
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.annotations['leaderworkerset.sigs.k8s.io/leader-address']
+          - name: LWS_GROUP_INDEX
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['leaderworkerset.sigs.k8s.io/group-index']
+          - name: LWS_WORKER_INDEX
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['leaderworkerset.sigs.k8s.io/worker-index']
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5

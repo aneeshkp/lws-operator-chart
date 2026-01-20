@@ -62,7 +62,9 @@ echo "[4/4] Splitting into CRDs and templates..."
 find "$CHART_DIR/manifests-crds" -name "*.yaml" -delete 2>/dev/null || true
 find "$CHART_DIR/templates" -name "*.yaml" \
   ! -name "pull-secret.yaml" \
+  ! -name "rolebinding-kube-system-auth-reader.yaml" \
   -delete 2>/dev/null || true
+# Note: rolebinding-kube-system-auth-reader.yaml is required for non-OpenShift clusters
 
 # Split manifests
 python3 << PYEOF

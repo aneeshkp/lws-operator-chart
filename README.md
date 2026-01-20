@@ -85,6 +85,7 @@ pullSecretFile: ~/pull-secret.txt
 - Pull secret (`redhat-pull-secret`)
 - LWS Operator ServiceAccount with `imagePullSecrets`
 - LWS Operator deployment + RBAC
+- RoleBinding in `kube-system` for API server auth (required for non-OpenShift clusters)
 
 **Post-install** (automatic):
 - LeaderWorkerSetOperator CR (`cluster`)
@@ -97,7 +98,7 @@ pullSecretFile: ~/pull-secret.txt
 | LWS Operator | 1.0 |
 | LeaderWorkerSet API | v1 |
 
-**OLM Bundle:** `registry.redhat.io/leader-worker-set/lws-operator-bundle` ([Red Hat Catalog](https://catalog.redhat.com/software/containers/leader-worker-set/lws-operator-bundle))
+**OLM Bundle:** `registry.redhat.io/leader-worker-set/lws-operator-bundle` ([Red Hat Catalog](https://catalog.redhat.com/en/software/containers/leader-worker-set/lws-operator-bundle/67ff5cf98d6d1a868448873b))
 
 ## Verify Installation
 
@@ -169,6 +170,35 @@ podman login registry.redhat.io
 kubectl rollout restart deployment/openshift-lws-operator -n openshift-lws-operator
 ```
 
+## Testing
+
+After installing the operator, you can validate it using the test manifests in the `test/` directory.
+
+### Available Tests
+
+| Test | File | Purpose |
+|------|------|---------|
+| Ring Test | `test/lws-ring-test.yaml` | Basic LWS validation - leader/worker topology and connectivity |
+| Network Test | `test/lws-network-test.yaml` | Network bandwidth test with iperf3/ping |
+
+### Run Tests
+
+```bash
+# Deploy a test
+kubectl apply -f test/lws-network-test.yaml
+
+# Watch pods come up
+kubectl get pods -n lws-test -w
+
+# Check test results (network test - view worker logs for iperf3 results)
+kubectl logs -n lws-test network-test-0-1
+
+# Cleanup
+kubectl delete -f test/lws-network-test.yaml
+```
+
+See `test/README.md` for detailed test documentation.
+
 ## File Structure
 
 ```
@@ -184,9 +214,13 @@ lws-operator-chart/
 │   ├── deployment-*.yaml        # Operator deployment
 │   ├── pull-secret.yaml         # Registry pull secret
 │   └── *.yaml                   # RBAC, ServiceAccount, etc.
-└── scripts/
-    ├── update-bundle.sh         # Update to new bundle version
-    ├── update-pull-secret.sh    # Update expired pull secret
-    ├── cleanup.sh               # Uninstall
-    └── post-install-message.sh  # Post-install instructions
+├── scripts/
+│   ├── update-bundle.sh         # Update to new bundle version
+│   ├── update-pull-secret.sh    # Update expired pull secret
+│   ├── cleanup.sh               # Uninstall
+│   └── post-install-message.sh  # Post-install instructions
+└── test/
+    ├── README.md                # Test documentation
+    ├── lws-ring-test.yaml       # Ring topology test
+    └── lws-network-test.yaml    # Network bandwidth test
 ```

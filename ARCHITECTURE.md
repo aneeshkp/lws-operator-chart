@@ -10,7 +10,7 @@ Deploy Red Hat Leader Worker Set (LWS) Operator on vanilla Kubernetes (AKS, EKS,
 | [lburgazzoli/olm-extractor](https://github.com/lburgazzoli/olm-extractor) | Extract OLM bundles for non-OLM clusters |
 
 **OLM Bundle:** `registry.redhat.io/leader-worker-set/lws-operator-bundle`
-- [Red Hat Catalog](https://catalog.redhat.com/software/containers/leader-worker-set/lws-operator-bundle)
+- [Red Hat Catalog](https://catalog.redhat.com/en/software/containers/leader-worker-set/lws-operator-bundle/67ff5cf98d6d1a868448873b)
 
 ## Architecture
 
@@ -25,7 +25,8 @@ Deploy Red Hat Leader Worker Set (LWS) Operator on vanilla Kubernetes (AKS, EKS,
 │  Helm Install                                                   │
 │  ├── Pull secret (redhat-pull-secret)                           │
 │  ├── LWS Operator ServiceAccount with imagePullSecrets          │
-│  └── LWS Operator deployment + RBAC                             │
+│  ├── LWS Operator deployment + RBAC                             │
+│  └── RoleBinding in kube-system (for API server auth)           │
 ├─────────────────────────────────────────────────────────────────┤
 │  Postsync (helmfile)                                            │
 │  └── LeaderWorkerSetOperator CR (cluster)                       │
@@ -94,6 +95,7 @@ Deploy Red Hat Leader Worker Set (LWS) Operator on vanilla Kubernetes (AKS, EKS,
 |-------------------|---------|----------|
 | OLM (Subscription, OperatorGroup) | Not available on vanilla K8s | Use Helm + helmfile |
 | Global pull secret | Node-level registry auth | ServiceAccount with `imagePullSecrets` |
+| API server auth config | Operator can't read `extension-apiserver-authentication` configmap | RoleBinding in `kube-system` to `extension-apiserver-authentication-reader` Role |
 
 ## olm-extractor Integration
 

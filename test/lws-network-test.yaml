@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lws-test
+---
+# Network test for LWS - validates leader/worker connectivity
+# Based on RDMA test pattern by David Whyte-Gray
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: network-test
+  namespace: lws-test
+  labels:
+    app: network-test
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: 2
+    restartPolicy: RecreateGroupOnPodRestart
+    workerTemplate:
+      metadata:
+        labels:
+          app: network-test
+      spec:
+        containers:
+        - name: nettest
+          image: nicolaka/netshoot:latest
+          imagePullPolicy: Always
+          command:
+          - /bin/bash
+          - -c
+          - |
+            echo "=========================================="
+            echo "  LWS NETWORK TEST"
+            echo "=========================================="
+            echo "Hostname: $HOSTNAME"
+            echo "IP: $(hostname -i)"
+            echo "Worker Index: $LWS_WORKER_INDEX"
+            echo "Leader Address: $LWS_LEADER_ADDRESS"
+            echo ""
+
+            if [ "$LWS_WORKER_INDEX" -eq "0" ]; then
+                echo "=== Running as SERVER (Leader) ==="
+                iperf3 -s -p 5201
+            else
+                echo "=== Running as CLIENT (Worker) ==="
+                sleep 10
+                echo ""
+                echo "=== Ping Test ==="
+                ping -c 5 $LWS_LEADER_ADDRESS
+                echo ""
+                echo "=== iperf3 Bandwidth Test ==="
+                iperf3 -c $LWS_LEADER_ADDRESS -p 5201 -t 10 || true
+                echo ""
+                echo "=== TEST COMPLETE ==="
+                sleep infinity
+            fi
+          env:
+          - name: LWS_LEADER_ADDRESS
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.annotations['leaderworkerset.sigs.k8s.io/leader-address']
+          - name: LWS_WORKER_INDEX
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['leaderworkerset.sigs.k8s.io/worker-index']
