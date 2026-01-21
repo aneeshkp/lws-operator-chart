@@ -1,0 +1,129 @@
+name: Helm Chart CI/CD
+
+on:
+  pull_request:
+    paths:
+      - 'Chart.yaml'
+      - 'values.yaml'
+      - 'templates/**'
+      - 'manifests-crds/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'Chart.yaml'
+      - 'values.yaml'
+      - 'templates/**'
+      - 'manifests-crds/**'
+  workflow_dispatch:
+
+jobs:
+  # Run on PRs - lint and test only
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.14.0
+
+      - name: Lint Chart
+        run: helm lint .
+
+      - name: Template Chart
+        run: helm template test . > /dev/null
+
+  # Run on main - auto-bump version and publish
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.14.0
+
+      - name: Auto-bump patch version
+        id: chart
+        run: |
+          # Get current version
+          CURRENT=$(grep '^version:' Chart.yaml | awk '{print $2}')
+          echo "Current version: $CURRENT"
+
+          # Parse and bump patch version
+          MAJOR=$(echo $CURRENT | cut -d. -f1)
+          MINOR=$(echo $CURRENT | cut -d. -f2)
+          PATCH=$(echo $CURRENT | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+
+          echo "New version: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Update Chart.yaml
+          sed -i "s/^version:.*/version: $NEW_VERSION/" Chart.yaml
+
+          # Commit version bump
+          git add Chart.yaml
+          git commit -m "Bump chart version to $NEW_VERSION [skip ci]"
+          git push
+
+      - name: Package Chart
+        run: helm package . -d .deploy
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Create gh-pages if not exists
+        run: |
+          if [ ! -d "gh-pages" ]; then
+            mkdir gh-pages
+            cd gh-pages
+            git init
+            git checkout -b gh-pages
+          fi
+
+      - name: Update Helm repo index
+        run: |
+          cp .deploy/*.tgz gh-pages/
+          cd gh-pages
+          helm repo index . --url https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ --merge index.yaml 2>/dev/null || \
+          helm repo index . --url https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages
+          git add .
+          git commit -m "Release ${{ steps.chart.outputs.version }}"
+          git push origin gh-pages --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### Chart Published" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: ${{ steps.chart.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" >> $GITHUB_STEP_SUMMARY
