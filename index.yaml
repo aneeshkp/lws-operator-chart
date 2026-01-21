@@ -1,0 +1,24 @@
+apiVersion: v1
+entries:
+  lws-operator:
+  - apiVersion: v2
+    appVersion: "1.0"
+    created: "2026-01-21T19:01:32.418212385Z"
+    description: Red Hat Leader Worker Set Operator for Kubernetes
+    digest: 4fc7dd4dec5f175611175eb825f0b8a4bade06bdff6c6cf63e946ec865f94e93
+    keywords:
+    - lws
+    - leader-worker-set
+    - ai-ml
+    - inference
+    - distributed-workloads
+    maintainers:
+    - name: Red Hat
+    name: lws-operator
+    sources:
+    - https://github.com/kubernetes-sigs/lws
+    type: application
+    urls:
+    - https://aneeshkp.github.io/lws-operator-chart/lws-operator-1.0.1.tgz
+    version: 1.0.1
+generated: "2026-01-21T19:01:32.417507073Z"
