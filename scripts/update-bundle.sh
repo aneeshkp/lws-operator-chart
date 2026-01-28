@@ -49,7 +49,7 @@ podman rm "$CONTAINER_ID"
 
 # Extract manifests using olm-extractor
 echo "[3/4] Processing manifests with olm-extractor..."
-podman run --rm \
+podman run --rm --pull=always \
   -v "$TMP_DIR:/bundle:z" \
   quay.io/lburgazzoli/olm-extractor:main run \
   -n openshift-lws-operator \
